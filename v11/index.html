@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ghost Signal Instrument — Filter Design Lab</title>
+    <meta name="description"
+        content="Professional experimental visualization tool for designing speculative ghost signal instrument aesthetics.">
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Inter:wght@300;400;500;600&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <div id="app">
+        <!-- SIDEBAR -->
+        <aside id="sidebar">
+            <header id="sidebar-header">
+                <h1>GHOST SIGNAL</h1>
+                <span class="subtitle">FILTER DESIGN LAB</span>
+            </header>
+
+            <!-- Global Controls -->
+            <section class="panel" id="panel-global">
+                <div class="panel-header">
+                    <span class="panel-title">SOURCE</span>
+                </div>
+                <div class="panel-body">
+                    <label class="btn btn-upload" for="image-upload">
+                        <input type="file" id="image-upload" accept="image/*" style="display: none">
+                        UPLOAD IMAGE
+                    </label>
+                    <button class="btn btn-action" id="btn-add-signal" disabled>ADD SIGNAL</button>
+                    <button class="btn btn-action" id="btn-deform-mode" disabled>DEFORM MODE: OFF</button>
+                    <div id="placement-indicator" class="hidden">
+                        <span class="indicator-dot"></span> CLICK ON IMAGE TO PLACE
+                    </div>
+                </div>
+            </section>
+
+            <!-- Layer Stack -->
+            <section class="panel" id="panel-layers">
+                <div class="panel-header">
+                    <span class="panel-title">LAYER STACK</span>
+                    <button class="btn-icon" id="btn-add-layer" title="Add Layer">+</button>
+                </div>
+                <div class="panel-body">
+                    <div id="layer-menu" class="hidden">
+                        <button class="layer-menu-item" data-layer="signal">Signal Layer</button>
+                        <button class="layer-menu-item" data-layer="scanner">Scanner Layer</button>
+                        <button class="layer-menu-item" data-layer="grain">Grain Layer</button>
+                        <button class="layer-menu-item" data-layer="data">Data Layer</button>
+                    </div>
+                    <ul id="layer-list"></ul>
+                </div>
+            </section>
+
+            <!-- Signal Cloud List -->
+            <section class="panel" id="panel-signals">
+                <div class="panel-header">
+                    <span class="panel-title">SIGNAL CLOUDS</span>
+                    <span class="panel-count" id="signal-count">0</span>
+                </div>
+                <div class="panel-body">
+                    <ul id="signal-list"></ul>
+                </div>
+            </section>
+
+            <!-- Active Parameter Panel (dynamic) -->
+            <section class="panel" id="panel-params">
+                <div class="panel-header">
+                    <span class="panel-title" id="params-title">PARAMETERS</span>
+                </div>
+                <div class="panel-body" id="params-body">
+                    <p class="placeholder-text">Select a signal cloud or layer to edit parameters.</p>
+                </div>
+            </section>
+        </aside>
+
+        <!-- MAIN VIEWPORT -->
+        <main id="viewport">
+            <div id="canvas-container">
+                <canvas id="main-canvas"></canvas>
+            </div>
+            <div id="version-tag">V11</div>
+            <div id="status-bar">
+                <span id="status-resolution">—</span>
+                <span id="status-layers">0 layers</span>
+                <span id="status-signals">0 signals</span>
+                <span id="status-fps">—</span>
+            </div>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>

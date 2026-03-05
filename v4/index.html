@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ghost Signal Instrument — Analog Composition Lab</title>
+  <meta name="description"
+    content="Multi-layer signal composition tool for ghost/presence visualization. Compose Signal Field, Scanner, and Voice Print layers.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <header id="app-header">
+    <div class="header-left">
+      <div class="status-dot"></div>
+      <div>
+        <h1>Ghost Signal Instrument</h1>
+        <p class="subtitle">Analog composition lab — optical error &amp; signal artifact</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <span class="header-badge">CLIENT-SIDE</span>
+      <span class="header-badge accent">LAB v5.0</span>
+    </div>
+  </header>
+
+  <main id="app-main">
+
+    <!-- ═══════════════════════════════════════
+         LEFT PANEL: Layer Stack + Hotspot
+         ═══════════════════════════════════════ -->
+    <aside id="layers-panel">
+
+      <!-- Panel top: title + add layer -->
+      <div class="layers-panel-top">
+        <span class="panel-label">SIGNAL LAYERS</span>
+        <div class="add-layer-wrap">
+          <button id="btn-add-layer" class="ctrl-btn accent" title="Add a new layer">+ Add</button>
+          <div id="add-layer-menu" class="add-layer-menu hidden">
+            <button class="add-menu-item" data-add-type="waves">
+              <span class="add-menu-icon">⬡</span>
+              <div><strong>Waves Detection</strong><small>Organic spectral residue overlay</small></div>
+            </button>
+            <button class="add-menu-item" data-add-type="scanner">
+              <span class="add-menu-icon">⊟</span>
+              <div><strong>Scanner</strong><small>Instrument raster sweep</small></div>
+            </button>
+            <button class="add-menu-item" data-add-type="grain">
+              <span class="add-menu-icon">⁙</span>
+              <div><strong>Grain / Glitch</strong><small>Film grain, bleed, analog error</small></div>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Layer stack (dynamically populated) -->
+      <div id="layer-list" class="layer-list">
+        <!-- Layers injected here by JS -->
+        <div class="layer-list-empty" id="layer-list-empty">
+          <p>No layers yet.<br>Click <strong>+ Add</strong> to begin.</p>
+        </div>
+      </div>
+
+      <!-- ── Hotspot Paint Section ── -->
+      <div id="hotspot-section" class="hotspot-section">
+        <div class="hotspot-header" id="hotspot-header-row">
+          <h3>Hotspot Paint</h3>
+          <button id="btn-hotspot-toggle" class="ctrl-btn" title="Toggle hotspot painting mode">Edit Hotspots</button>
+        </div>
+        <div id="hotspot-controls" class="hotspot-controls hidden">
+          <div class="control-row">
+            <label for="hotspot-brush-size" title="Brush radius in pixels">Brush Size</label>
+            <input type="range" id="hotspot-brush-size" min="5" max="150" value="40">
+            <span class="control-value" data-for="hotspot-brush-size">40</span>
+          </div>
+          <div class="control-row">
+            <label for="hotspot-strength" title="How strongly the brush paints the hotspot mask">Strength</label>
+            <input type="range" id="hotspot-strength" min="1" max="100" value="60">
+            <span class="control-value" data-for="hotspot-strength">60</span>
+          </div>
+          <div class="hotspot-btn-row">
+            <button id="btn-hotspot-erase" class="ctrl-btn" title="Switch to erase mode">⌦ Erase</button>
+            <button id="btn-hotspot-clear" class="ctrl-btn danger" title="Clear the entire hotspot mask">Clear
+              All</button>
+          </div>
+          <p class="control-hint">Layers with Mask: Hotspot will be modulated by painted regions.</p>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- ═══════════════════════════════════════
+         RIGHT: Canvas / Preview
+         ═══════════════════════════════════════ -->
+    <section id="preview-area">
+
+      <!-- Upload Zone -->
+      <div id="upload-zone">
+        <div class="upload-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="17 8 12 3 7 8" />
+            <line x1="12" y1="3" x2="12" y2="15" />
+          </svg>
+        </div>
+        <p class="upload-title">Drop image here or click to upload</p>
+        <p class="upload-hint">JPG or PNG — processed entirely in browser</p>
+        <input type="file" id="file-input" accept="image/jpeg,image/png" hidden>
+      </div>
+
+      <!-- Canvas Container -->
+      <div id="canvas-container" class="hidden">
+        <!-- Main display canvas -->
+        <canvas id="display-canvas"></canvas>
+        <!-- Hotspot mask overlay (shown only in paint mode) -->
+        <canvas id="hotspot-canvas" class="hotspot-canvas hidden"></canvas>
+        <!-- Split divider -->
+        <div id="split-divider" class="hidden">
+          <div class="divider-line"></div>
+          <div class="divider-handle">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8 5v14l-4-7zm8 0v14l4-7z" />
+            </svg>
+          </div>
+        </div>
+        <!-- Scanline effect -->
+        <div id="scanline-overlay" class="hidden"></div>
+      </div>
+
+      <!-- View controls bar -->
+      <div id="view-controls" class="hidden">
+        <div class="view-toggle-group">
+          <button class="view-btn active" data-mode="filtered">Filtered</button>
+          <button class="view-btn" data-mode="original">Original</button>
+          <button class="view-btn" data-mode="split">Split View</button>
+        </div>
+        <div class="view-actions">
+          <button id="btn-scanline" class="action-btn" title="Toggle scanline monitor effect">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="3" width="20" height="14" rx="2" />
+              <line x1="8" y1="21" x2="16" y2="21" />
+              <line x1="12" y1="17" x2="12" y2="21" />
+            </svg>
+            <span>Monitor</span>
+          </button>
+          <button id="btn-download" class="action-btn" title="Download composited image">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            <span>Download</span>
+          </button>
+          <button id="btn-new-image" class="action-btn" title="Upload a new image">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+            <span>New Image</span>
+          </button>
+        </div>
+      </div>
+
+    </section>
+  </main>
+
+  <!-- Brush cursor overlay (follows mouse in hotspot paint mode) -->
+  <div id="brush-cursor" class="brush-cursor hidden"></div>
+  <!-- Stain placement cursor overlay -->
+  <div id="stain-place-cursor" class="stain-place-cursor hidden"></div>
+  <script src="app.js"></script>
+
+</body>
+
+</html>
