@@ -23,19 +23,20 @@ class SignalAnchor {
 
         // Per-signal tunable params
         this.params = {
-            size: 0.005,            // v16 Baseline default
-            density: 1.0,           // injection intensity
+            size: 0.003,            // splat radius (GL units) — halved from 0.006
+            density: 1.2,           // injection intensity
             speed: 1.0,             // scales injection force + emitter motion (NOT solver dt)
-            curlRadius: 30,         // vAtom: digital glitch strength
+            radiusLimit: 60,        // max spread from anchor (px) — replaces old dissipation
+            curlRadius: 30,         // curl/vorticity strength
             emissionRate: 5,        // splats per second per micro-emitter
             anchorJitter: 8,        // coherent noise offset radius (px)
-            shapeRoughness: 0.8,    // v16 Baseline: organic shapes
             hue: Math.random() * 360,
             saturation: 70,
-            saturationBoost: 1.0,   // v16 Baseline: saturation boost
             brightness: 80,
             opacity: 0.85,
             blendMode: 'embedded',  // default natural blending
+            glitchAmount: 0.0,      // 0..1 overlay intensity for scanner lines
+            glitchOpacity: 1.0,     // 0..1 final alpha multiplier for glitch overlay
             dataVisible: true,
             tracking: 1,            // 1=label follows blob, 0=label at fixed absolute position
             dataOffsetX: 20,
@@ -44,7 +45,6 @@ class SignalAnchor {
             dataAbsY: 100,          // absolute label Y (used when tracking=0)
             deviceIdText: ''        // editable per-cloud ID text (empty = use generated)
         };
-        this.color = null;          // v16 Baseline: modification 1
 
         // Simulated device data
         const names = [
@@ -68,20 +68,18 @@ class SignalAnchor {
         // Per-anchor gradient palette (5 stops, HSL for rich mixing)
         this._buildGradient();
 
-        // Create micro-emitters (8–14) for highly organic shapes
+        // Create micro-emitters (3–7) with mixed CW/CCW
         this.microEmitters = [];
-        const n = 8 + Math.floor(Math.random() * 7);
+        const n = 3 + Math.floor(Math.random() * 5);
         for (let i = 0; i < n; i++) {
+            const cw = i % 2 === 0 ? 1 : -1;
             this.microEmitters.push({
-                radius: 10 + Math.random() * 40,
-                omega: (Math.random() < 0.5 ? 1 : -1) * (0.03 + Math.random() * 0.12),
+                radius: 15 + Math.random() * 35,
+                omega: cw * (0.03 + Math.random() * 0.12),
                 phase: Math.random() * Math.PI * 2,
-                radialBias: (Math.random() - 0.5) * 0.15,
-                noisePhase: Math.random() * 1000,
-                colorOffset: Math.random() * 60 - 30,
-                anisotropyX: 0.7 + Math.random() * 0.6,
-                anisotropyY: 0.7 + Math.random() * 0.6,
-                scale: 0.7 + Math.random() * 1.3
+                radialBias: (Math.random() - 0.5) * 0.3,
+                noisePhase: Math.random() * 100,
+                colorOffset: Math.random() * 60 - 30
             });
         }
     }
@@ -234,16 +232,6 @@ const AtomFluidEngine = {
                  gl_Position = vec4(aPosition, 0.0, 1.0);
              }`);
 
-        // Display vertex with Y-flip for final output
-        this._shaders.displayVertex = this._compileShader(gl.VERTEX_SHADER,
-            `precision highp float;
-             attribute vec2 aPosition;
-             varying vec2 vUv;
-             void main () {
-                 vUv = aPosition * 0.5 + 0.5;
-                 gl_Position = vec4(aPosition.x, -aPosition.y, 0.0, 1.0);
-             }`);
-
         this._shaders.clear = this._compileShader(gl.FRAGMENT_SHADER,
             `precision highp float; precision mediump sampler2D;
              varying vec2 vUv; uniform sampler2D uTexture; uniform float value;
@@ -326,29 +314,15 @@ const AtomFluidEngine = {
         this._shaders.vorticity = this._compileShader(gl.FRAGMENT_SHADER,
             `precision highp float; precision mediump sampler2D;
              varying vec2 vUv, vL, vR, vT, vB;
-             uniform sampler2D uVelocity, uCurl; uniform float curl, dt, uTime;
-             
-             float hash(vec2 p) { return fract(sin(dot(p, vec2(12.71, 311.7))) * 43758.5453123); }
-
+             uniform sampler2D uVelocity, uCurl; uniform float curl, dt;
              void main () {
                  float L = texture2D(uCurl, vL).y, R = texture2D(uCurl, vR).y;
                  float T = texture2D(uCurl, vT).x, B = texture2D(uCurl, vB).x;
                  float C = texture2D(uCurl, vUv).x;
-                 
-                 // Digital Glitch: quantized micro-shearing based on curl strength
-                 float glitchAmount = clamp(curl / 100.0, 0.0, 1.0);
-                 vec2 jitter = vec2(hash(vUv * 400.0 + uTime * 0.2), hash(vUv * 411.0 - uTime * 0.15)) - 0.5;
-                 vec2 glitchUv = vUv + jitter * 0.003 * glitchAmount;
-
-                 // HF Interference
-                 float noise = hash(vUv * 800.0 + uTime * 2.0) * 2.0 - 1.0;
-                 vec2 noiseForce = vec2(noise, hash(vUv.yx * 777.0 - uTime)) * glitchAmount * 0.8;
-
-                 vec2 delta = vec2(abs(T) - abs(B), abs(R) - abs(L));
-                 vec2 force = delta * (1.0 / (length(delta) + 0.00001)) * curl * C;
-                 
-                 vec2 vel = texture2D(uVelocity, glitchUv).xy;
-                 gl_FragColor = vec4(vel + (force + noiseForce) * dt, 0.0, 1.0);
+                 vec2 force = vec2(abs(T) - abs(B), abs(R) - abs(L));
+                 force *= 1.0 / length(force + 0.00001) * curl * C;
+                 vec2 vel = texture2D(uVelocity, vUv).xy;
+                 gl_FragColor = vec4(vel + force * dt, 0.0, 1.0);
              }`);
 
         this._shaders.pressure = this._compileShader(gl.FRAGMENT_SHADER,
@@ -402,7 +376,7 @@ const AtomFluidEngine = {
         const advFS = this._supportLinear ? s.advection : s.advectionManual;
         this._programs = {
             clear: this._createGLProgram(s.baseVertex, s.clear),
-            display: this._createGLProgram(s.displayVertex, s.display),
+            display: this._createGLProgram(s.baseVertex, s.display),
             splat: this._createGLProgram(s.baseVertex, s.splat),
             advection: this._createGLProgram(s.baseVertex, advFS),
             divergence: this._createGLProgram(s.baseVertex, s.divergence),
@@ -478,7 +452,7 @@ const AtomFluidEngine = {
         p.bind();
         gl.uniform1i(p.uniforms.uTarget, this._velocity.first[2]);
         gl.uniform1f(p.uniforms.aspectRatio, c.width / c.height);
-        gl.uniform2f(p.uniforms.point, x / c.width, y / c.height);
+        gl.uniform2f(p.uniforms.point, x / c.width, 1.0 - y / c.height);
         gl.uniform3f(p.uniforms.color, dx, -dy, 1.0);
         gl.uniform1f(p.uniforms.radius, radius);
         this._blit(this._velocity.second[1]);
@@ -508,17 +482,6 @@ const AtomFluidEngine = {
         return [r + m, g + m, bl + m];
     },
 
-    /** Apply saturation boost to RGB [0-1] using luma formula */
-    _applySaturation(rgb, saturation) {
-        const luma = rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
-        const gray = luma;
-        return [
-            Math.max(0, Math.min(1, gray + (rgb[0] - gray) * saturation)),
-            Math.max(0, Math.min(1, gray + (rgb[1] - gray) * saturation)),
-            Math.max(0, Math.min(1, gray + (rgb[2] - gray) * saturation))
-        ];
-    },
-
     /** Lerp between gradient stops, override S with signal params.saturation */
     _lerpGradientRGB(gradient, t, emitterColorOffset, paramSaturation) {
         const n = gradient.length - 1;
@@ -526,8 +489,10 @@ const AtomFluidEngine = {
         const f = (t * n) - seg;
         const a = gradient[seg], b = gradient[seg + 1];
         const h = a.h + (b.h - a.h) * f + emitterColorOffset;
+        // Use the signal's saturation param instead of gradient's hardcoded s
+        const satClamped = Math.max(0, Math.min(100, paramSaturation));
         const l = a.l + (b.l - a.l) * f;
-        return this._hslToRGB(h, paramSaturation, l);
+        return this._hslToRGB(h, satClamped, l);
     },
 
     /* ── Simple noise for wobble ────────────────────────── */
@@ -559,61 +524,55 @@ const AtomFluidEngine = {
             const fractional = splatsPerFrame - wholeSplats;
             const totalSplats = Math.max(1, wholeSplats + (Math.random() < fractional ? 1 : 0));
 
+            // C: radiusLimit clamp
+            const rLimit = Math.max(5, p.radiusLimit);
+
             // G: brightness factor (0-100 → 0.0-2.0 multiplier)
             const brightnessFactor = (p.brightness / 100) * 2.0;
 
             anchor.microEmitters.forEach((em) => {
                 for (let si = 0; si < totalSplats; si++) {
+                    // C: clamp orbit radius to radiusLimit
+                    const orbitR = Math.min(em.radius, rLimit);
                     const angle = em.omega * anchor._time + em.phase;
-                    const emitterTime = anchor._time + em.noisePhase * 0.001;
+                    const emitterTime = anchor._time + em.noisePhase * 0.01;
 
-                    // Organic Shape: modulate radius and anisotropy jitter
-                    const rough = p.shapeRoughness || 1.0;
-                    const noiseR = 0.85 + this._noise(emitterTime * 1.8 + em.noisePhase) * 0.5 * rough;
-                    const orbitR = em.radius * noiseR;
+                    // E: coherent noise jitter, clamped to radiusLimit
+                    const jitterScale = Math.min(p.anchorJitter, rLimit);
+                    const wobbleX = this._noise(emitterTime * 0.7 + em.noisePhase) * jitterScale;
+                    const wobbleY = this._noise(emitterTime * 0.9 + em.noisePhase + 50) * jitterScale;
 
-                    // Coherent noise jitter 
-                    const jitterScale = p.anchorJitter * (0.4 + Math.random() * 0.6);
-                    const wobbleX = this._noise(emitterTime * 1.2 + em.noisePhase) * jitterScale;
-                    const wobbleY = this._noise(emitterTime * 1.4 + em.noisePhase + 200) * jitterScale;
-
-                    // Emitter position relative to anchor
-                    let offX = (Math.cos(angle) * orbitR) * em.anisotropyX + wobbleX;
-                    let offY = (Math.sin(angle) * orbitR) * em.anisotropyY + wobbleY;
-
+                    // Emitter position (clamped distance from anchor)
+                    let offX = Math.cos(angle) * orbitR + wobbleX;
+                    let offY = Math.sin(angle) * orbitR + wobbleY;
+                    const dist = Math.sqrt(offX * offX + offY * offY);
+                    if (dist > rLimit) {
+                        const scale = rLimit / dist;
+                        offX *= scale;
+                        offY *= scale;
+                    }
                     const ex = anchor.x + offX;
                     const ey = anchor.y + offY;
 
-                    // B: gentle force with scale jitter
+                    // B: gentle force — reduced ~10× (was 40-100, now 5-15)
                     const rDirX = Math.cos(angle);
                     const rDirY = Math.sin(angle);
-                    const noiseX = this._noise(emitterTime * 2.2 + em.noisePhase * 2) * 0.45;
-                    const noiseY = this._noise(emitterTime * 2.0 + em.noisePhase * 3) * 0.45;
-                    const forceMag = 7 + speedScale * 5;
+                    const noiseX = this._noise(emitterTime * 1.3 + em.noisePhase * 2) * 0.3;
+                    const noiseY = this._noise(emitterTime * 1.1 + em.noisePhase * 3) * 0.3;
+                    const forceMag = 5 + (rLimit / 200) * 10; // gentle, scales slightly with radius
                     const dx = (rDirX * em.radialBias + noiseX) * forceMag * speedScale;
                     const dy = (rDirY * em.radialBias + noiseY) * forceMag * speedScale;
 
-                    // Color: restore per-blob sampling precedence
-                    let rgb;
-                    if (anchor.color) {
-                        rgb = [anchor.color.r, anchor.color.g, anchor.color.b];
-                    } else {
-                        const t = (Math.sin(anchor._time * 0.3) + 1.0) * 0.5;
-                        rgb = this._lerpGradientRGB(anchor.colorGradient, t, em.colorOffset, p.saturation);
-                    }
+                    // Gradient palette colour with per-emitter offset + signal saturation
+                    const t = Math.random();
+                    const rgb = this._lerpGradientRGB(anchor.colorGradient, t, em.colorOffset, p.saturation);
+                    // D: constant per-splat intensity (not inversely scaled)
+                    // G: brightness multiplies final RGB
+                    const opacityFactor = Math.max(0, Math.min(2, p.opacity || 1.0));
+                    const intensity = p.density * 0.15 * brightnessFactor * opacityFactor;
+                    const color = [rgb[0] * intensity, rgb[1] * intensity, rgb[2] * intensity];
 
-                    // Apply random variation for volumetric feel
-                    const rVar = (Math.random() - 0.5) * 0.05;
-                    const gVar = (Math.random() - 0.5) * 0.05;
-                    const bVar = (Math.random() - 0.5) * 0.05;
-
-                    const color = [
-                        (rgb[0] + rVar) * intensity,
-                        (rgb[1] + gVar) * intensity,
-                        (rgb[2] + bVar) * intensity
-                    ];
-
-                    this._splat(ex, ey, dx, dy, color, p.size * em.scale);
+                    this._splat(ex, ey, dx, dy, color, p.size);
                     anchor._splatCount++;
                     this._totalSplats++;
                 }
@@ -631,8 +590,12 @@ const AtomFluidEngine = {
         const dSec = Math.max(0.001, Math.min(dt / 1000, 0.016));
         this._time += dSec;
 
-        // Curl from first anchor or global default
-        const avgCurl = anchors.length > 0 ? anchors[0].params.curlRadius : this.config.CURL;
+        // Use mean curl so no single anchor controls the whole field.
+        const avgCurl = anchors.length > 0
+            ? anchors.reduce((sum, a) => sum + (a.params.curlRadius || 0), 0) / anchors.length
+            : this.config.CURL;
+        // Keep vorticity contribution moderate; visual "corner softening" is handled in 2D compositing.
+        const solverCurl = 5.0 + avgCurl * 0.12;
 
         const tw = this._texW, th = this._texH;
         gl.viewport(0, 0, tw, th);
@@ -671,9 +634,8 @@ const AtomFluidEngine = {
         gl.uniform2f(vortP.uniforms.texelSize, 1.0 / tw, 1.0 / th);
         gl.uniform1i(vortP.uniforms.uVelocity, this._velocity.first[2]);
         gl.uniform1i(vortP.uniforms.uCurl, this._curlFBO[2]);
-        gl.uniform1f(vortP.uniforms.curl, avgCurl);
+        gl.uniform1f(vortP.uniforms.curl, solverCurl);
         gl.uniform1f(vortP.uniforms.dt, dSec);
-        gl.uniform1f(vortP.uniforms.uTime, performance.now() / 1000); // Added uTime uniform
         this._blit(this._velocity.second[1]);
         this._velocity.swap();
 

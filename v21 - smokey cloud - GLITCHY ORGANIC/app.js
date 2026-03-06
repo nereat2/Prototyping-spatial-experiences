@@ -472,7 +472,6 @@ const ImageDeformPass = {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true); // Fix: Orientation alignment
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
         this._imageW = img.width || img.videoWidth || 0;
         this._imageH = img.height || img.videoHeight || 0;
@@ -509,8 +508,8 @@ const ImageDeformPass = {
             if (i < count) {
                 const a = anchors[i];
                 const nx = (a.x - imageRect.x) / imageRect.w;
-                const ny = 1.0 - ((a.y - imageRect.y) / imageRect.h);
-                const nr = 100.0 / imageRect.w; // Fixed radius for deformation since radiusLimit is gone
+                const ny = 1.0 - (a.y - imageRect.y) / imageRect.h; // flip Y
+                const nr = (a.params.radiusLimit / imageRect.w) * 1.5; // radius in UV space
                 gl.uniform3f(this._program.uAnchors[i], nx, ny, Math.max(0.01, nr));
             } else {
                 gl.uniform3f(this._program.uAnchors[i], 0, 0, 0);
@@ -537,7 +536,7 @@ const ImageDeformPass = {
         const gl = this.gl;
 
         const u = (canvasX - imageRect.x) / imageRect.w;
-        const v = (canvasY - imageRect.y) / imageRect.h; // No flip needed with UNPACK_FLIP_Y
+        const v = 1.0 - (canvasY - imageRect.y) / imageRect.h;
         if (u < 0 || u > 1 || v < 0 || v > 1) return null;
 
         // Render 1×1 pixel of the image at (u,v) into the sample FBO
@@ -697,6 +696,168 @@ const Camera = {
 const Renderer = {
     dirty: true,
     _lastTime: 0,
+    _phaseCanvas: null,
+    _phaseCtx: null,
+    _phaseSrcCanvas: null,
+    _phaseSrcCtx: null,
+
+    getActiveSignalBlendMode() {
+        if (!State.signals || State.signals.length === 0) return 'screen';
+        if (State.selectedSignalId) {
+            const selected = State.signals.find(s => s.id === State.selectedSignalId);
+            if (selected) return selected.params.blendMode || 'screen';
+        }
+        return State.signals[0].params.blendMode || 'screen';
+    },
+
+    getCornerRoughness() {
+        if (!State.signals || State.signals.length === 0) return 0;
+        const avgCurl = State.signals.reduce((sum, s) => sum + (s.params.curlRadius || 0), 0) / State.signals.length;
+        const t = Math.max(0, Math.min(1, avgCurl / 100));
+        // 0 => unchanged, 1 => strong roughening.
+        return Math.pow(t, 1.15);
+    },
+
+    drawRoughnessPass(ctx, layerOpacity, roughness, timestamp) {
+        if (!AtomFluidEngine.canvas || roughness <= 0.001) return;
+        const t = timestamp * 0.003;
+        const jitter = 0.6 + roughness * 2.8;
+        const alpha = layerOpacity * roughness * 0.18;
+        const ox1 = Math.sin(t * 1.7) * jitter;
+        const oy1 = Math.cos(t * 1.3) * jitter;
+        const ox2 = Math.sin(t * 2.1 + 1.3) * jitter;
+        const oy2 = Math.cos(t * 1.9 + 0.7) * jitter;
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = alpha;
+        ctx.drawImage(AtomFluidEngine.canvas, ox1, oy1);
+        ctx.drawImage(AtomFluidEngine.canvas, -ox2, oy2);
+        ctx.restore();
+    },
+
+    drawSurfacePhaseGlitch(ctx, timestamp, layerOpacity) {
+        if (!AtomFluidEngine.canvas || !State.signals || State.signals.length === 0) return;
+        if (!this._phaseCanvas) {
+            this._phaseCanvas = document.createElement('canvas');
+            this._phaseCtx = this._phaseCanvas.getContext('2d');
+            this._phaseSrcCanvas = document.createElement('canvas');
+            this._phaseSrcCtx = this._phaseSrcCanvas.getContext('2d');
+        }
+        const pCanvas = this._phaseCanvas;
+        const pCtx = this._phaseCtx;
+        const sCanvas = this._phaseSrcCanvas;
+        const sCtx = this._phaseSrcCtx;
+        if (!pCtx || !sCtx) return;
+        const t = timestamp * 0.001;
+
+        State.signals.forEach((s, idx) => {
+            const g = Math.max(0, Math.min(1, s.params.scannerGlitch || 0));
+            if (g <= 0.01) return;
+
+            const radius = Math.max(26, (s.params.radiusLimit || 60) * 2.5 + (s.params.anchorJitter || 0) * 1.3);
+            const minX = Math.max(0, Math.floor(s.x - radius));
+            const minY = Math.max(0, Math.floor(s.y - radius));
+            const maxX = Math.min(ctx.canvas.width, Math.ceil(s.x + radius));
+            const maxY = Math.min(ctx.canvas.height, Math.ceil(s.y + radius));
+            const w = maxX - minX;
+            const h = maxY - minY;
+            if (w < 8 || h < 8) return;
+
+            if (pCanvas.width !== w || pCanvas.height !== h) {
+                pCanvas.width = w; pCanvas.height = h;
+                sCanvas.width = w; sCanvas.height = h;
+            }
+
+            // Source blob surface for local re-indexing.
+            sCtx.clearRect(0, 0, w, h);
+            sCtx.globalCompositeOperation = 'source-over';
+            sCtx.drawImage(AtomFluidEngine.canvas, minX, minY, w, h, 0, 0, w, h);
+            sCtx.globalCompositeOperation = 'destination-in';
+            sCtx.drawImage(AtomFluidEngine.canvas, minX, minY, w, h, 0, 0, w, h);
+
+            pCtx.clearRect(0, 0, w, h);
+            pCtx.globalCompositeOperation = 'source-over';
+
+            const bands = Math.floor(8 + g * 16); // 8..24
+            const seed = (s.id % 100000) * 0.00053 + idx * 0.37;
+            const maxShift = 1.5 + g * 18.0;
+            const yWobble = 0.4 + g * 2.2;
+            const cx = w * 0.5;
+            const cy = h * 0.5;
+
+            // Curved field mask (bezier/quadratic contour) to avoid circular read.
+            const mPts = [];
+            const mCount = 8;
+            const rxBase = w * 0.39;
+            const ryBase = h * 0.39;
+            for (let i = 0; i < mCount; i++) {
+                const a = (i / mCount) * Math.PI * 2;
+                const rn = noise(seed + i * 0.51, t * 0.45 + 3.1);
+                const rx = rxBase * (0.86 + (rn * 0.5 + 0.5) * 0.34);
+                const ry = ryBase * (0.86 + (rn * 0.5 + 0.5) * 0.34);
+                mPts.push({
+                    x: cx + Math.cos(a) * rx,
+                    y: cy + Math.sin(a) * ry
+                });
+            }
+            pCtx.save();
+            pCtx.beginPath();
+            for (let i = 0; i < mCount; i++) {
+                const a = mPts[i];
+                const b = mPts[(i + 1) % mCount];
+                const mx = (a.x + b.x) * 0.5;
+                const my = (a.y + b.y) * 0.5;
+                if (i === 0) pCtx.moveTo(mx, my);
+                pCtx.quadraticCurveTo(a.x, a.y, mx, my);
+            }
+            pCtx.closePath();
+            pCtx.clip();
+
+            for (let bi = 0; bi < bands; bi++) {
+                const y0 = Math.floor((bi / bands) * h);
+                const y1 = Math.floor(((bi + 1) / bands) * h);
+                const bh = Math.max(1, y1 - y0);
+
+                const n = noise(seed + bi * 0.23, t * (0.75 + g * 0.8));
+                const n2 = noise(seed + bi * 0.41 + 19.0, t * (1.1 + g * 1.2));
+                const shiftX = Math.round(n * maxShift);
+                const localY = y0 + Math.round(n2 * yWobble);
+                const alpha = 0.88 + (n * 0.5 + 0.5) * 0.16;
+
+                // Optional dropout segments at high glitch.
+                const drop = noise(seed + bi * 0.79 + 41.0, t * 2.4);
+                if (g > 0.55 && drop > 0.72) continue;
+
+                pCtx.globalAlpha = alpha;
+                pCtx.drawImage(sCanvas, 0, y0, w, bh, shiftX, localY, w, bh);
+            }
+
+            // Very subtle internal ghosting / phase duplication.
+            if (g > 0.25) {
+                pCtx.globalCompositeOperation = 'screen';
+                pCtx.globalAlpha = 0.05 + g * 0.11;
+                const ghostShift = 0.5 + g * 2.0;
+                pCtx.drawImage(pCanvas, ghostShift, 0);
+            }
+            pCtx.restore();
+
+            // Confine strictly to local blob alpha silhouette.
+            pCtx.globalCompositeOperation = 'destination-in';
+            pCtx.globalAlpha = 1.0;
+            pCtx.drawImage(AtomFluidEngine.canvas, minX, minY, w, h, 0, 0, w, h);
+
+            // Composite back into scene.
+            ctx.save();
+            const sigBlend = (s.params && s.params.blendMode) ? s.params.blendMode : 'screen';
+            if (sigBlend === 'embedded') ctx.globalCompositeOperation = 'soft-light';
+            else if (sigBlend === 'add') ctx.globalCompositeOperation = 'lighter';
+            else ctx.globalCompositeOperation = sigBlend;
+            ctx.globalAlpha = Math.min(1, layerOpacity * (0.42 + g * 0.5));
+            ctx.drawImage(pCanvas, minX, minY);
+            ctx.restore();
+        });
+    },
 
     init() {
         // Init global fluid engine FIRST (resize() needs it)
@@ -817,32 +978,44 @@ const Renderer = {
             if (layer.type === 'signal') {
                 // Global fluid: draw the single engine canvas across full viewport
                 if (State.signals.length > 0 && AtomFluidEngine.canvas) {
-                    const bMode = State.signals[0].params.blendMode || 'screen';
-                    const avgOp = Math.min(2.0, State.signals[0].params.opacity || 0.85);
                     const layOp = layer.opacity || 1.0;
+                    const bMode = this.getActiveSignalBlendMode();
+                    const roughness = this.getCornerRoughness();
+                    const contrast = Math.round(100 + roughness * 45);
 
                     if (bMode === 'embedded') {
+                        ctx.filter = `contrast(${contrast}%)`;
                         ctx.globalCompositeOperation = 'soft-light';
-                        ctx.globalAlpha = layOp * avgOp * 0.9;
+                        ctx.globalAlpha = layOp * 0.9;
                         ctx.drawImage(AtomFluidEngine.canvas, 0, 0);
                         ctx.globalCompositeOperation = 'overlay';
-                        ctx.globalAlpha = layOp * avgOp * 0.6;
+                        ctx.globalAlpha = layOp * 0.6;
                         ctx.drawImage(AtomFluidEngine.canvas, 0, 0);
                         ctx.globalCompositeOperation = 'screen';
-                        ctx.globalAlpha = layOp * avgOp * 0.35;
+                        ctx.globalAlpha = layOp * 0.35;
                         ctx.drawImage(AtomFluidEngine.canvas, 0, 0);
+                        ctx.filter = 'none';
                         ctx.globalCompositeOperation = 'source-over';
-                        ctx.globalAlpha = layOp * avgOp * 0.2;
+                        ctx.globalAlpha = layOp * 0.2;
                         ctx.drawImage(AtomFluidEngine.canvas, 0, 0);
                     } else if (bMode === 'add') {
+                        ctx.filter = `contrast(${contrast}%)`;
                         ctx.globalCompositeOperation = 'lighter';
-                        ctx.globalAlpha = layOp * avgOp;
+                        ctx.globalAlpha = layOp;
                         ctx.drawImage(AtomFluidEngine.canvas, 0, 0);
+                        ctx.filter = 'none';
                     } else {
+                        ctx.filter = `contrast(${contrast}%)`;
                         ctx.globalCompositeOperation = bMode;
-                        ctx.globalAlpha = layOp * avgOp;
+                        ctx.globalAlpha = layOp;
                         ctx.drawImage(AtomFluidEngine.canvas, 0, 0);
+                        ctx.filter = 'none';
                     }
+
+                    // High curl => rougher/jagged perimeter via jittered additive pass.
+                    this.drawRoughnessPass(ctx, layOp, roughness, timestamp);
+                    this.drawSurfacePhaseGlitch(ctx, timestamp, layOp);
+
                 }
             } else if (layer.type === 'data') {
                 layer.render(ctx, canvas, State.signals);
@@ -1106,14 +1279,10 @@ function addSignal(x, y) {
     if (State.imageRect && State.imageRect.w > 0) {
         const sampled = ImageDeformPass.sampleColor(x, y, State.imageRect);
         if (sampled) {
-            // v16 Baseline: modification 1 - store normalized color
-            signal.color = { r: sampled.r / 255, g: sampled.g / 255, b: sampled.b / 255 };
-
-            // Still update HSL for UI sliders to reflect reality
             const hsl = _rgbToHSL(sampled.r, sampled.g, sampled.b);
             signal.params.hue = hsl.h;
-            signal.params.saturation = hsl.s;
-            signal.params.brightness = hsl.l;
+            signal.params.saturation = Math.max(0, hsl.s * 0.85); // ~15% desaturation
+            signal.params.brightness = Math.max(15, Math.min(85, hsl.l)); // clamp luminance
             signal._buildGradient();
         }
     }
@@ -1175,7 +1344,7 @@ function updateSignalList() {
         const li = document.createElement('li');
         li.className = `signal-item ${State.selectedSignalId === s.id ? 'selected' : ''}`;
         li.innerHTML = `
-            <span class="layer-name">CLOUD_${s.data.hash}</span>
+            <span class="layer-name">${s.getDisplayId()}</span>
             <button class="signal-delete">×</button>
         `;
         li.onclick = () => selectSignal(s.id);
@@ -1220,19 +1389,17 @@ function removeSignal(id) {
 /* ── PARAMETER RENDERING ────────────────────────────── */
 
 function renderParamsPanel(target) {
-    if (!target) return;
-    UI.paramsTitle.textContent = target.name || `CLOUD_${target.data.hash}`;
+    if (target instanceof SignalAnchor) UI.paramsTitle.textContent = target.getDisplayId();
+    else UI.paramsTitle.textContent = target.name || "PARAMETERS";
     UI.paramsBody.innerHTML = '';
 
     const params = target.params;
     if (!params) return;
 
     Object.keys(params).forEach(key => {
-        // Hide absolute position when tracking=1, hide relative offset when tracking=0
+        // Fix 6: hide abs position when tracking=1, hide relative offset when tracking=0
         if (target.params.tracking === 1 && (key === 'dataAbsX' || key === 'dataAbsY')) return;
         if (target.params.tracking === 0 && (key === 'dataOffsetX' || key === 'dataOffsetY')) return;
-        // Hide internal/helper params
-        if (key.startsWith('_')) return;
 
         const val = params[key];
         const row = document.createElement('div');
@@ -1241,6 +1408,7 @@ function renderParamsPanel(target) {
         const label = document.createElement('span');
         label.className = 'param-label';
         label.textContent = key.replace(/([A-Z])/g, ' $1').toLowerCase();
+        if (key === 'scannerGlitch') label.textContent = 'glitch';
 
         if (typeof val === 'number') {
             const slider = document.createElement('input');
@@ -1248,33 +1416,42 @@ function renderParamsPanel(target) {
             slider.className = 'param-slider';
 
             let min = 0, max = 1, step = 0.01;
-            if (key === 'size') { min = 0.00025; max = 0.02; step = 0.00025; }
-            else if (key === 'density') { min = 0.1; max = 5.0; step = 0.1; }
-            else if (key === 'speed') { min = 0.1; max = 4.0; step = 0.1; }
-            else if (key === 'curlRadius') { min = 0; max = 100; step = 1; }
-            else if (key === 'emissionRate') { min = 0.5; max = 30; step = 0.5; }
-            else if (key === 'anchorJitter') { min = 0; max = 80; step = 1; }
-            else if (key === 'shapeRoughness') { min = 0; max = 2.0; step = 0.05; }
-            else if (key === 'hue') { min = 0; max = 360; step = 1; }
-            else if (key === 'saturation') { min = 0; max = 100; step = 1; }
-            else if (key === 'saturationBoost') { min = 0; max = 3.0; step = 0.1; }
-            else if (key === 'brightness') { min = 0; max = 200; step = 1; }
-            else if (key === 'opacity') { min = 0; max = 1.0; step = 0.01; }
-            else if (key === 'dataOffsetX' || key === 'dataOffsetY') { min = -200; max = 200; step = 1; }
-            else if (key === 'dataAbsX') { min = 0; max = 2000; step = 1; }
-            else if (key === 'dataAbsY') { min = 0; max = 2000; step = 1; }
+            // Atom Fluid Params vAtom
+            if (key === 'size') { min = 0.0005; max = 0.03; step = 0.0005; }
+            if (key === 'density') { min = 0.1; max = 3.0; step = 0.05; }
+            if (key === 'speed') { min = 0.1; max = 5.0; step = 0.05; }
+            if (key === 'radiusLimit') { min = 5; max = 200; step = 1; }
+            if (key === 'curlRadius') { min = 0; max = 100; step = 1; }
+            if (key === 'emissionRate') { min = 0.5; max = 20; step = 0.5; }
+            if (key === 'anchorJitter') { min = 0; max = 80; step = 1; }
+            if (key === 'hue') { min = 0; max = 360; step = 1; }
+            if (key === 'saturation') { min = 0; max = 100; step = 1; }
+            if (key === 'brightness') { min = 0; max = 100; step = 1; }
+            if (key === 'opacity') { min = 0; max = 2.0; step = 0.01; }
+            if (key === 'scannerGlitch') { min = 0; max = 1.0; step = 0.01; }
+            // Per-signal data offset
+            if (key === 'dataOffsetX') { min = -200; max = 200; step = 1; }
+            if (key === 'dataOffsetY') { min = -200; max = 200; step = 1; }
+            if (key === 'dataAbsX') { min = 0; max = 800; step = 1; }
+            if (key === 'dataAbsY') { min = 0; max = 480; step = 1; }
+            // Deform params
+            if (key === 'brushSize') { min = 10; max = 500; step = 1; }
+            if (key === 'strength') { min = 0.1; max = 5.0; step = 0.05; }
+            if (key === 'stabilize') { min = 0; max = 0.95; step = 0.01; }
+            if (key === 'softness') { min = 0; max = 1; step = 0.01; }
+            // Data layer
+            if (key === 'fontSize') { min = 6; max = 24; step = 1; }
 
             slider.min = min; slider.max = max; slider.step = step;
             slider.value = val;
 
             const valueDisplay = document.createElement('span');
             valueDisplay.className = 'param-value';
-            valueDisplay.textContent = typeof val === 'number' && val < 0.1 ? val.toFixed(4) : val.toString();
+            valueDisplay.textContent = val;
 
             slider.oninput = (e) => {
-                const nval = parseFloat(e.target.value);
-                target.params[key] = nval;
-                valueDisplay.textContent = nval < 0.1 ? nval.toFixed(4) : nval.toString();
+                target.params[key] = parseFloat(e.target.value);
+                valueDisplay.textContent = e.target.value;
                 if (target instanceof SignalAnchor) {
                     target.dirty = true;
                     State.useManualParams = true;
@@ -1286,18 +1463,45 @@ function renderParamsPanel(target) {
             row.appendChild(label);
             row.appendChild(slider);
             row.appendChild(valueDisplay);
-        } else if (typeof val === 'boolean' || key === 'tracking') {
+        } else if (typeof val === 'boolean') {
+            row.className = 'param-toggle-row';
             const toggle = document.createElement('div');
-            toggle.className = `param-toggle ${val || val === 1 ? 'active' : ''}`;
+            toggle.className = `param-toggle ${val ? 'active' : ''}`;
             toggle.onclick = () => {
-                if (key === 'tracking') {
-                    target.params[key] = target.params[key] === 1 ? 0 : 1;
-                    renderParamsPanel(target);
-                } else {
-                    target.params[key] = !target.params[key];
-                    toggle.classList.toggle('active');
-                }
+                target.params[key] = !target.params[key];
+                toggle.classList.toggle('active');
                 if (target instanceof SignalAnchor) target.dirty = true;
+            };
+            row.appendChild(label);
+            row.appendChild(toggle);
+        } else if (key === 'deviceIdText') {
+            // Text input for editable device ID
+            const textInput = document.createElement('input');
+            textInput.type = 'text';
+            textInput.className = 'param-text';
+            textInput.placeholder = target.data ? target.data.deviceId : 'ID...';
+            textInput.value = val || '';
+            textInput.oninput = (e) => {
+                target.params[key] = e.target.value;
+                if (target instanceof SignalAnchor) {
+                    target.dirty = true;
+                    UI.paramsTitle.textContent = target.getDisplayId();
+                    updateSignalList();
+                }
+            };
+            row.appendChild(label);
+            row.appendChild(textInput);
+        } else if (key === 'tracking') {
+            // Toggle for tracking mode (1=relative, 0=absolute)
+            row.className = 'param-toggle-row';
+            const toggle = document.createElement('div');
+            toggle.className = `param-toggle ${val === 1 ? 'active' : ''}`;
+            toggle.onclick = () => {
+                target.params[key] = target.params[key] === 1 ? 0 : 1;
+                toggle.classList.toggle('active');
+                if (target instanceof SignalAnchor) target.dirty = true;
+                // Rebuild param panel to show/hide absolute position sliders
+                renderParamsPanel(target);
             };
             row.appendChild(label);
             row.appendChild(toggle);
@@ -1316,16 +1520,16 @@ function renderParamsPanel(target) {
             };
             row.appendChild(label);
             row.appendChild(select);
-        } else if (key === 'deviceIdText') {
-            const textInput = document.createElement('input');
-            textInput.type = 'text';
-            textInput.className = 'param-text';
-            textInput.value = val || '';
-            textInput.oninput = (e) => {
+        } else if (key === 'color') {
+            const colorInput = document.createElement('input');
+            colorInput.type = 'color';
+            colorInput.className = 'param-color-input';
+            colorInput.value = val;
+            colorInput.oninput = (e) => {
                 target.params[key] = e.target.value;
             };
             row.appendChild(label);
-            row.appendChild(textInput);
+            row.appendChild(colorInput);
         }
 
         UI.paramsBody.appendChild(row);
@@ -1340,7 +1544,7 @@ window.addEventListener('load', () => {
     Renderer.init();
     initBindings();
 
-    // Default layers: signal + data only (no scanner/grain)
+    // Default layers: signal + data only
     addLayer('signal');
     addLayer('data');
 
