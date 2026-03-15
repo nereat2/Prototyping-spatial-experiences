@@ -504,12 +504,13 @@ const ImageDeformPass = {
         // Anchor data: convert canvas px to normalized UV within the image rect
         const count = Math.min(anchors.length, 16);
         gl.uniform1i(this._program.uAnchorCount, count);
+        const baseImageDeformRadius = 60;
         for (let i = 0; i < 16; i++) {
             if (i < count) {
                 const a = anchors[i];
                 const nx = (a.x - imageRect.x) / imageRect.w;
                 const ny = 1.0 - (a.y - imageRect.y) / imageRect.h; // flip Y
-                const nr = (a.params.radiusLimit / imageRect.w) * 1.5; // radius in UV space
+                const nr = (baseImageDeformRadius / imageRect.w) * 1.5; // fixed image warp radius
                 gl.uniform3f(this._program.uAnchors[i], nx, ny, Math.max(0.01, nr));
             } else {
                 gl.uniform3f(this._program.uAnchors[i], 0, 0, 0);
@@ -694,7 +695,6 @@ const Camera = {
 /* ── RENDERER ──────────────────────────────────────── */
 
 const Renderer = {
-    dirty: true,
     _lastTime: 0,
 
     init() {
@@ -817,7 +817,8 @@ const Renderer = {
                 // Global fluid: draw the single engine canvas across full viewport
                 if (State.signals.length > 0 && AtomFluidEngine.canvas) {
                     const bMode = State.signals[0].params.blendMode || 'screen';
-                    const avgOp = Math.min(2.0, State.signals[0].params.opacity || 0.85);
+                    const opacitySum = State.signals.reduce((sum, s) => sum + (s.params.opacity || 0.85), 0);
+                    const avgOp = Math.min(6.0, opacitySum / State.signals.length);
                     const layOp = layer.opacity || 1.0;
 
                     if (bMode === 'embedded') {
@@ -1226,6 +1227,7 @@ function renderParamsPanel(target) {
     if (!params) return;
 
     Object.keys(params).forEach(key => {
+        if (key === 'glitchAmount') return;
         // Fix 6: hide abs position when tracking=1, hide relative offset when tracking=0
         if (target.params.tracking === 1 && (key === 'dataAbsX' || key === 'dataAbsY')) return;
         if (target.params.tracking === 0 && (key === 'dataOffsetX' || key === 'dataOffsetY')) return;
@@ -1248,14 +1250,16 @@ function renderParamsPanel(target) {
             if (key === 'size') { min = 0.00025; max = 0.03; step = 0.00025; } // v16 Baseline: min is half of 0.0005
             if (key === 'density') { min = 0.1; max = 3.0; step = 0.05; }
             if (key === 'speed') { min = 0.1; max = 5.0; step = 0.05; }
-            if (key === 'radiusLimit') { min = 5; max = 200; step = 1; }
+            if (key === 'radiusLimit') { min = 5; max = 320; step = 1; }
             if (key === 'curlRadius') { min = 0; max = 100; step = 1; }
-            if (key === 'emissionRate') { min = 0.5; max = 20; step = 0.5; }
-            if (key === 'anchorJitter') { min = 0; max = 80; step = 1; }
-            if (key === 'hue') { min = 0; max = 360; step = 1; }
-            if (key === 'saturation') { min = 0; max = 100; step = 1; }
+            if (key === 'emissionRate') { min = 0; max = 60; step = 0.5; }
+            if (key === 'anchorJitter') { min = 0; max = 240; step = 1; }
+            if (key === 'shapeRoughness') { min = 0; max = 1.5; step = 0.01; }
+            if (key === 'hue') { min = 0; max = 1080; step = 1; }
+            if (key === 'saturation') { min = 0; max = 300; step = 1; }
             if (key === 'brightness') { min = 0; max = 100; step = 1; }
-            if (key === 'opacity') { min = 0; max = 2.0; step = 0.01; }
+            if (key === 'opacity') { min = 0; max = 6.0; step = 0.01; }
+            if (key === 'deformAmount') { min = -2.0; max = 2.0; step = 0.01; }
             // Per-signal data offset
             if (key === 'dataOffsetX') { min = -200; max = 200; step = 1; }
             if (key === 'dataOffsetY') { min = -200; max = 200; step = 1; }

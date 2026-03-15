@@ -831,7 +831,7 @@ const Renderer = {
                         ctx.globalAlpha = layOp * avgOp * 0.35;
                         ctx.drawImage(AtomFluidEngine.canvas, 0, 0);
                         ctx.globalCompositeOperation = 'source-over';
-                        ctx.globalAlpha = layOp * avgOp * 0.2;
+                        ctx.globalAlpha = layOp * avgOp * 0.75; // Increased from 0.2 for stronger body/opacity
                         ctx.drawImage(AtomFluidEngine.canvas, 0, 0);
                     } else if (bMode === 'add') {
                         ctx.globalCompositeOperation = 'lighter';

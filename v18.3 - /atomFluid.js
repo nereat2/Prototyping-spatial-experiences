@@ -24,24 +24,24 @@ class SignalAnchor {
         // Per-signal tunable params
         this.params = {
             size: 0.003,            // v16 Baseline default
-            density: 1.2,           // injection intensity
-            speed: 1.0,             // scales injection force + emitter motion (NOT solver dt)
-            radiusLimit: 60,        // max spread from anchor (px) — replaces old dissipation
-            curlRadius: 30,         // curl/vorticity strength
-            emissionRate: 5,        // splats per second per micro-emitter
-            anchorJitter: 8,        // coherent noise offset radius (px)
+            density: 0.55,          // User target baseline
+            speed: 3.4,             // User target baseline
+            radiusLimit: 195,       // User target baseline
+            curlRadius: 0,          // User target baseline
+            emissionRate: 6,        // User target baseline
+            anchorJitter: 51,       // User target baseline
             hue: Math.random() * 360,
-            saturation: 70,
-            brightness: 80,
-            opacity: 0.85,
-            blendMode: 'embedded',  // default natural blending
+            saturation: 70,         // User target baseline
+            brightness: 80,         // User target baseline
+            opacity: 0.56,          // User target baseline
+            blendMode: 'screen',    // User target baseline
             dataVisible: true,
-            tracking: 1,            // 1=label follows blob, 0=label at fixed absolute position
-            dataOffsetX: 20,
-            dataOffsetY: 20,
-            dataAbsX: 100,          // absolute label X (used when tracking=0)
-            dataAbsY: 100,          // absolute label Y (used when tracking=0)
-            deviceIdText: ''        // editable per-cloud ID text (empty = use generated)
+            tracking: 1,
+            dataOffsetX: 100,       // User target baseline
+            dataOffsetY: 20,        // User target baseline
+            dataAbsX: 100,
+            dataAbsY: 100,
+            deviceIdText: ''
         };
         this.color = null;          // v16 Baseline: modification 1
 
@@ -67,18 +67,40 @@ class SignalAnchor {
         // Per-anchor gradient palette (5 stops, HSL for rich mixing)
         this._buildGradient();
 
-        // Create micro-emitters (3–7) with mixed CW/CCW
+        // Create micro-emitters: Nucleus + Organic Lobes (Amoeba structure)
         this.microEmitters = [];
-        const n = 3 + Math.floor(Math.random() * 5);
+
+        // 1. The Nucleus: Dense, central, slow-moving body
+        this.microEmitters.push({
+            radius: 4,
+            omega: 0.02 * (Math.random() > 0.5 ? 1 : -1),
+            phase: 0,
+            radialBias: 0,
+            noisePhase: Math.random() * 100,
+            colorOffset: 0,
+            sizeMult: 2.2, // Larger splat for core body
+            intensityMult: 1.5 // Stronger core
+        });
+
+        // 2. The Lobes: Irregular pseudopodia (Morpha-like structure)
+        // 2 to 4 dominant lobes, with irregular scale and spacing
+        const n = 2 + Math.floor(Math.random() * 3);
         for (let i = 0; i < n; i++) {
-            const cw = i % 2 === 0 ? 1 : -1;
+            const cw = Math.random() > 0.5 ? 1 : -1;
+            // Clusters: some lobes are larger/denser
+            const isDominant = Math.random() > 0.6;
+
             this.microEmitters.push({
-                radius: 15 + Math.random() * 35,
-                omega: cw * (0.03 + Math.random() * 0.12),
-                phase: Math.random() * Math.PI * 2,
-                radialBias: (Math.random() - 0.5) * 0.3,
+                radius: 12 + Math.random() * 48,
+                omega: cw * (0.005 + Math.random() * 0.04), // Slower, drifting "living" motion
+                phase: (i / n) * Math.PI * 2 + (Math.random() * 1.5), // Irregular spacing
+                radialBias: (Math.random() - 0.3) * 0.7, // Push out more
                 noisePhase: Math.random() * 100,
-                colorOffset: Math.random() * 60 - 30
+                colorOffset: Math.random() * 40 - 20,
+                sizeMult: isDominant ? 1.4 : 0.7 + Math.random() * 0.5,
+                intensityMult: isDominant ? 1.3 : 0.8,
+                driftDir: Math.random() * Math.PI * 2, // Anisotropy bias
+                driftStr: Math.random() * 0.4
             });
         }
     }
@@ -129,12 +151,12 @@ const AtomFluidEngine = {
     // Global sim config (defaults, can be overridden by first anchor or globally)
     config: {
         TEXTURE_DOWNSAMPLE: 1,
-        DENSITY_DISSIPATION: 0.975,
+        DENSITY_DISSIPATION: 0.982, // Slower decay for thicker smoke
         VELOCITY_DISSIPATION: 0.985,
         PRESSURE_DISSIPATION: 0.8,
         PRESSURE_ITERATIONS: 20,
         CURL: 30,
-        BUOYANCY: 0.15   // subtle upward bias (candle-like)
+        BUOYANCY: 0.55   // persistent upward bias (smoke rising)
     },
 
     /* ── Init ──────────────────────────────────────────── */
@@ -241,8 +263,10 @@ const AtomFluidEngine = {
              varying vec2 vUv; uniform sampler2D uTexture;
              void main () {
                  vec4 c = texture2D(uTexture, vUv);
-                 float a = length(c.rgb);
-                 gl_FragColor = vec4(c.rgb, smoothstep(0.0, 0.05, a));
+                 float lum = length(c.rgb);
+                 // Stronger alpha mapping for bodily presence
+                 float alpha = smoothstep(0.0, 0.1, lum) * 1.25; 
+                 gl_FragColor = vec4(c.rgb, clamp(alpha, 0.0, 1.0));
              }`);
 
         this._shaders.splat = this._compileShader(gl.FRAGMENT_SHADER,
@@ -488,8 +512,8 @@ const AtomFluidEngine = {
         const f = (t * n) - seg;
         const a = gradient[seg], b = gradient[seg + 1];
         const h = a.h + (b.h - a.h) * f + emitterColorOffset;
-        // Use the signal's saturation param instead of gradient's hardcoded s
-        const satClamped = Math.max(0, Math.min(100, paramSaturation));
+        // Boost effective saturation by 200% as requested
+        const satClamped = Math.max(0, Math.min(100, paramSaturation * 2.0));
         const l = a.l + (b.l - a.l) * f;
         return this._hslToRGB(h, satClamped, l);
     },
@@ -508,8 +532,8 @@ const AtomFluidEngine = {
             // Speed scales emitter motion + injection force, NOT dt
             const speedScale = Math.max(0.05, p.speed); // floor: always alive
 
-            // Advance emitter time by speed-scaled dt
-            anchor._time += dt * speedScale;
+            // Advance emitter time (slower organic evolution)
+            anchor._time += dt * speedScale * 0.8;
 
             // Rebuild gradient if hue changed
             if (anchor._lastGradHue !== p.hue) {
@@ -531,19 +555,35 @@ const AtomFluidEngine = {
 
             anchor.microEmitters.forEach((em) => {
                 for (let si = 0; si < totalSplats; si++) {
-                    // C: clamp orbit radius to radiusLimit
-                    const orbitR = Math.min(em.radius, rLimit);
+                    // Organic Radius Modulation (Breathing/Undulating)
+                    // Multi-frequency low-frequency noise for organic "pulsing" and lobe extension
+                    const breathing = Math.sin(anchor._time * 0.7 + em.noisePhase) * 12 +
+                        Math.sin(anchor._time * 1.3 + em.noisePhase * 0.5) * 5;
+                    const currentR = Math.max(0, em.radius + breathing);
+
+                    // C: clamp orbit radius
+                    const orbitR = Math.min(currentR, rLimit);
                     const angle = em.omega * anchor._time + em.phase;
                     const emitterTime = anchor._time + em.noisePhase * 0.01;
 
                     // E: coherent noise jitter, clamped to radiusLimit
                     const jitterScale = Math.min(p.anchorJitter, rLimit);
-                    const wobbleX = this._noise(emitterTime * 0.7 + em.noisePhase) * jitterScale;
-                    const wobbleY = this._noise(emitterTime * 0.9 + em.noisePhase + 50) * jitterScale;
+                    const wobbleX = this._noise(emitterTime * 0.5 + em.noisePhase) * jitterScale;
+                    const wobbleY = this._noise(emitterTime * 0.6 + em.noisePhase + 50) * jitterScale;
+
+                    // Directional drift (Anisotropy)
+                    const driftDir = em.driftDir || 0;
+                    const driftStr = em.driftStr || 0;
+                    const driftX = Math.cos(driftDir + anchor._time * 0.2) * rLimit * driftStr;
+                    const driftY = Math.sin(driftDir + anchor._time * 0.2) * rLimit * driftStr;
 
                     // Emitter position (clamped distance from anchor)
-                    let offX = Math.cos(angle) * orbitR + wobbleX;
-                    let offY = Math.sin(angle) * orbitR + wobbleY;
+                    let offX = Math.cos(angle) * orbitR + wobbleX + driftX;
+                    let offY = Math.sin(angle) * orbitR + wobbleY + driftY;
+
+                    // Antigravity: sinusoidal upward drift relative to anchor
+                    offY -= Math.sin(anchor._time * 0.4 + em.noisePhase) * 8 * speedScale;
+
                     const dist = Math.sqrt(offX * offX + offY * offY);
                     if (dist > rLimit) {
                         const scale = rLimit / dist;
@@ -553,18 +593,22 @@ const AtomFluidEngine = {
                     const ex = anchor.x + offX;
                     const ey = anchor.y + offY;
 
-                    // B: gentle force — reduced ~10× (was 40-100, now 5-15)
+                    // B: gentle force
                     const rDirX = Math.cos(angle);
                     const rDirY = Math.sin(angle);
                     const noiseX = this._noise(emitterTime * 1.3 + em.noisePhase * 2) * 0.3;
                     const noiseY = this._noise(emitterTime * 1.1 + em.noisePhase * 3) * 0.3;
-                    const forceMag = 5 + (rLimit / 200) * 10; // gentle, scales slightly with radius
+                    const forceMag = 5 + (rLimit / 200) * 10;
                     const dx = (rDirX * em.radialBias + noiseX) * forceMag * speedScale;
                     const dy = (rDirY * em.radialBias + noiseY) * forceMag * speedScale;
 
+                    // Antigravity: persistent upward force
+                    const antigravityForce = 4.5 * speedScale;
+                    const dyFinal = dy - antigravityForce;
+
                     // Gradient palette colour with per-emitter offset + signal saturation
                     const t = Math.random();
-                    // D: constant per-splat intensity (not inversely scaled)
+
                     // G: brightness multiplies final RGB
                     const intensity = p.density * 0.15 * brightnessFactor;
 
@@ -584,7 +628,11 @@ const AtomFluidEngine = {
                         color = [rgb[0] * intensity, rgb[1] * intensity, rgb[2] * intensity];
                     }
 
-                    this._splat(ex, ey, dx, dy, color, p.size);
+                    // Apply per-emitter size multiplier (Nucleus is big, lobes vary)
+                    const finalIntensity = intensity * (em.intensityMult || 1.0);
+                    const finalSplatColor = [color[0] * (em.intensityMult || 1.0), color[1] * (em.intensityMult || 1.0), color[2] * (em.intensityMult || 1.0)];
+
+                    this._splat(ex, ey, dx, dyFinal, finalSplatColor, p.size * (em.sizeMult || 1.0));
                     anchor._splatCount++;
                     this._totalSplats++;
                 }

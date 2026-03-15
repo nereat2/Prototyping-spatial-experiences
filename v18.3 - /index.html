@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ghost Signal Instrument — Smoke Cloud</title>
+    <meta name="description"
+        content="Experimental visualization tool for speculative ghost signal instrument aesthetics using smoke cloud particle systems.">
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Inter:wght@300;400;500;600&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <div id="app">
+        <!-- MAIN VIEWPORT -->
+        <main id="viewport">
+            <div id="control-bar">
+                <div id="control-bar-title">GHOST SIGNAL <span class="subtitle">vAtom</span></div>
+                <div id="control-buttons">
+                    <button class="ctrl-btn" id="btn-camera">START CAMERA</button>
+                    <label class="ctrl-btn ctrl-btn-upload" for="image-upload">
+                        <input type="file" id="image-upload" accept="image/*" style="display:none">
+                        UPLOAD IMAGE
+                    </label>
+                    <button class="ctrl-btn" id="btn-add-signal" disabled>ADD SIGNAL</button>
+                    <button class="ctrl-btn ctrl-btn-capture" id="btn-capture-transparent">CAPTURE PNG</button>
+                </div>
+                <div id="placement-indicator" class="hidden">
+                    <span class="indicator-dot"></span> CLICK ON IMAGE TO PLACE
+                </div>
+            </div>
+            <div id="canvas-container">
+                <canvas id="main-canvas"></canvas>
+            </div>
+            <button id="btn-capture" class="capture-btn">CAPTURE</button>
+            <div id="version-tag">vAtom</div>
+            <div id="status-bar">
+                <span id="status-resolution">—</span>
+                <span id="status-layers">0 layers</span>
+                <span id="status-signals">0 signals</span>
+                <span id="status-fps">—</span>
+            </div>
+        </main>
+
+        <!-- HIDDEN STUBS FOR JS COMPATIBILITY -->
+        <div style="display:none">
+            <input type="file" id="telemetry-upload" accept=".json">
+            <input type="checkbox" id="debug-toggle">
+            <input type="checkbox" id="debug-export-toggle">
+            <input type="checkbox" id="telemetry-freeze">
+            <input type="checkbox" id="telemetry-jitter">
+            <input type="checkbox" id="manual-params-toggle">
+            <button id="btn-deform-mode" disabled></button>
+            <button id="btn-capture"></button>
+            <div id="panel-layers">
+                <button id="btn-add-layer"></button>
+                <div id="layer-menu"></div>
+                <ul id="layer-list"></ul>
+            </div>
+            <ul id="signal-list"></ul>
+            <span id="signal-count">0</span>
+            <div id="params-body"></div>
+            <span id="params-title"></span>
+            <span id="status-layers"></span>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="telemetry.js"></script>
+    <script src="atomFluid.js"></script>
+    <script src="debug.js"></script>
+    <script src="app.js"></script>
+</body>
+
+</html>

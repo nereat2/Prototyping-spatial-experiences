@@ -30,6 +30,7 @@ class SignalAnchor {
             curlRadius: 30,         // curl/vorticity strength
             emissionRate: 5,        // splats per second per micro-emitter
             anchorJitter: 8,        // coherent noise offset radius (px)
+            shapeRoughness: 0.85,   // 0..1.5 irregular organic silhouette complexity
             hue: Math.random() * 360,
             saturation: 70,
             brightness: 80,
@@ -40,8 +41,8 @@ class SignalAnchor {
             dataOffsetX: 20,
             dataOffsetY: 20,
             dataAbsX: 100,          // absolute label X (used when tracking=0)
-            dataAbsY: 100,          // absolute label Y (used when tracking=0)
-            deviceIdText: ''        // editable per-cloud ID text (empty = use generated)
+            deviceIdText: '',       // editable per-cloud ID text (empty = use generated)
+            deformAmount: 0.0       // -2..2 blob push/pull deformation (negative pull, positive push)
         };
         this.color = null;          // v16 Baseline: modification 1
 
@@ -63,24 +64,25 @@ class SignalAnchor {
         this.dirty = true;
         this._time = 0;
         this._splatCount = 0;
+        this._emissionAccumulator = 0;
 
         // Per-anchor gradient palette (5 stops, HSL for rich mixing)
         this._buildGradient();
 
-        // Create micro-emitters (3–7) with mixed CW/CCW
-        this.microEmitters = [];
-        const n = 3 + Math.floor(Math.random() * 5);
-        for (let i = 0; i < n; i++) {
-            const cw = i % 2 === 0 ? 1 : -1;
-            this.microEmitters.push({
-                radius: 15 + Math.random() * 35,
-                omega: cw * (0.03 + Math.random() * 0.12),
-                phase: Math.random() * Math.PI * 2,
-                radialBias: (Math.random() - 0.5) * 0.3,
-                noisePhase: Math.random() * 100,
-                colorOffset: Math.random() * 60 - 30
+        // Create N control points for a smooth, organic closed contour
+        this.controlPoints = [];
+        const nPoints = 8 + Math.floor(Math.random() * 5); // 8..12 points
+        for (let i = 0; i < nPoints; i++) {
+            this.controlPoints.push({
+                angle: (i / nPoints) * Math.PI * 2,
+                noisePhase: Math.random() * 200,
+                baseRadiusScale: 0.6 + Math.random() * 0.6,    // irregular base distances
+                wobbleSpeed: 0.8 + Math.random() * 0.4
             });
         }
+
+        // Ensure seamless looping by caching the last point as connected to the first implicitly
+        // We will sample this using smooth splines in the emit loop
     }
 
     /** Rebuild 5-stop gradient palette from current hue */
@@ -489,7 +491,7 @@ const AtomFluidEngine = {
         const a = gradient[seg], b = gradient[seg + 1];
         const h = a.h + (b.h - a.h) * f + emitterColorOffset;
         // Use the signal's saturation param instead of gradient's hardcoded s
-        const satClamped = Math.max(0, Math.min(100, paramSaturation));
+        const satClamped = Math.max(0, Math.min(300, paramSaturation));
         const l = a.l + (b.l - a.l) * f;
         return this._hslToRGB(h, satClamped, l);
     },
@@ -505,11 +507,15 @@ const AtomFluidEngine = {
     _emitFromAnchors(anchors, dt) {
         anchors.forEach(anchor => {
             const p = anchor.params;
-            // Speed scales emitter motion + injection force, NOT dt
-            const speedScale = Math.max(0.05, p.speed); // floor: always alive
+            // Speed remap for stronger visible response without touching solver dt.
+            const rawSpeed = Math.max(0.05, p.speed);
+            const motionSpeed = Math.pow(rawSpeed, 1.65);
+            const motionGain = 0.2 + motionSpeed * 0.8;
+            const forceGain = 0.25 + motionSpeed * 0.75;
+            const roughness = Math.max(0, Math.min(1.5, p.shapeRoughness ?? 0.85));
 
-            // Advance emitter time by speed-scaled dt
-            anchor._time += dt * speedScale;
+            // Advance emitter time smoothly to avoid aggressive rhythmic motion.
+            anchor._time += dt * motionGain;
 
             // Rebuild gradient if hue changed
             if (anchor._lastGradHue !== p.hue) {
@@ -517,33 +523,94 @@ const AtomFluidEngine = {
                 anchor._lastGradHue = p.hue;
             }
 
-            // D: emissionRate controls splat count per frame
-            const splatsPerFrame = p.emissionRate * dt;
-            const wholeSplats = Math.floor(splatsPerFrame);
-            const fractional = splatsPerFrame - wholeSplats;
-            const totalSplats = Math.max(1, wholeSplats + (Math.random() < fractional ? 1 : 0));
-
             // C: radiusLimit clamp
             const rLimit = Math.max(5, p.radiusLimit);
+            const haloScale = Math.max(0.2, rLimit / 60);
+            const targetEmissionRate = Math.max(0, p.emissionRate);
+            const emissionLerp = Math.min(1, dt * 3.5);
+            anchor._emissionAccumulator += (targetEmissionRate - anchor._emissionAccumulator) * emissionLerp;
 
             // G: brightness factor (0-100 → 0.0-2.0 multiplier)
             const brightnessFactor = (p.brightness / 100) * 2.0;
 
-            anchor.microEmitters.forEach((em) => {
-                for (let si = 0; si < totalSplats; si++) {
-                    // C: clamp orbit radius to radiusLimit
-                    const orbitR = Math.min(em.radius, rLimit);
-                    const angle = em.omega * anchor._time + em.phase;
-                    const emitterTime = anchor._time + em.noisePhase * 0.01;
+            // B: determine total splats needed for this anchor this frame 
+            // We scale targetEmissionRate to cover an entire contour smoothly.
+            const totalEmitters = 12; // we synthesize N distinct injection spots moving along the contour
 
-                    // E: coherent noise jitter, clamped to radiusLimit
-                    const jitterScale = Math.min(p.anchorJitter, rLimit);
-                    const wobbleX = this._noise(emitterTime * 0.7 + em.noisePhase) * jitterScale;
-                    const wobbleY = this._noise(emitterTime * 0.9 + em.noisePhase + 50) * jitterScale;
+            // Advance emission counters. We treat 'emitters' virtually now as points traveling around the spline
+            const emitRatePerSpot = Math.max(0, anchor._emissionAccumulator) * dt * 8.0 * (0.35 + motionSpeed * 0.65);
 
-                    // Emitter position (clamped distance from anchor)
-                    let offX = Math.cos(angle) * orbitR + wobbleX;
-                    let offY = Math.sin(angle) * orbitR + wobbleY;
+            // Evaluate organic dynamic curve
+            // We use the controlPoints to form a smooth continuous radius function R(angle)
+            // It morphs smoothly over time
+            const baseRadius = Math.min(rLimit * 0.8, rLimit);
+            const getCurveRadius = (theta, t) => {
+                let r = 0;
+                let totWt = 0;
+                // Weighted sum of control points (radial basis function roughly)
+                for (let i = 0; i < anchor.controlPoints.length; i++) {
+                    const cp = anchor.controlPoints[i];
+                    // angular distance wrapped cleanly
+                    let dTheta = Math.abs(theta - cp.angle);
+                    if (dTheta > Math.PI) dTheta = Math.PI * 2 - dTheta;
+
+                    // weight falls off smoothly 
+                    const wt = Math.exp(-(dTheta * dTheta) / 0.8);
+
+                    // slow biological morphing noise
+                    const slowNoise = this._noise(t * 0.15 * cp.wobbleSpeed + cp.noisePhase);
+
+                    const localRad = baseRadius * cp.baseRadiusScale * (1.0 + slowNoise * 0.45);
+                    r += localRad * wt;
+                    totWt += wt;
+                }
+                return (r / totWt) * haloScale;
+            }
+
+            for (let i = 0; i < totalEmitters; i++) {
+                // Initialize a persistent accumulator for this virtual emitter dynamically if needed
+                if (!anchor._virtEmitAccs) anchor._virtEmitAccs = new Array(totalEmitters).fill(Math.random());
+
+                anchor._virtEmitAccs[i] += emitRatePerSpot;
+                const emitCount = Math.floor(anchor._virtEmitAccs[i]);
+                anchor._virtEmitAccs[i] -= emitCount;
+                if (emitCount <= 0) continue;
+
+                for (let si = 0; si < emitCount; si++) {
+                    const emitT = (si + anchor._virtEmitAccs[i]) / emitCount;
+                    const emitterTime = anchor._time + emitT * 0.08;
+
+                    // Each virtual emitter travels slowly around the deformed contour
+                    const angleOffset = (i / totalEmitters) * Math.PI * 2;
+                    // Slow sweeping rotation of the injection points 
+                    const currentAngle = angleOffset + emitterTime * 0.1 * (i % 2 === 0 ? 1 : -1) * (0.3 + motionSpeed * 0.3);
+
+                    const orbitR = Math.min(getCurveRadius(currentAngle % (Math.PI * 2), emitterTime), rLimit);
+                    const rDirX = Math.cos(currentAngle);
+                    const rDirY = Math.sin(currentAngle);
+
+                    // Anchor jitter (keeps overall blob shifting slightly)
+                    const jitterScale = Math.min(p.anchorJitter * (1.1 + roughness * 0.8), rLimit * 1.5);
+                    const wobbleX = this._noise(emitterTime * 0.32 + String(anchor.id).charCodeAt(0)) * jitterScale;
+                    const wobbleY = this._noise(emitterTime * 0.38 + String(anchor.id).charCodeAt(0) + 50) * jitterScale;
+
+                    let offX = rDirX * orbitR + wobbleX;
+                    let offY = rDirY * orbitR + wobbleY;
+
+                    // Apply user deformation if enabled
+                    const deformNorm = Math.max(-1, Math.min(1, (p.deformAmount || 0) / 2));
+                    if (deformNorm !== 0) {
+                        const deformField = this._noise(emitterTime * (0.45 + motionSpeed * 0.2) + i) +
+                            this._noise(emitterTime * 0.72 + i * 2) * 0.35;
+                        const radialWarp = Math.max(0.25, 1 + deformNorm * deformField * 0.75);
+                        offX *= radialWarp;
+                        offY *= radialWarp;
+                        const tangentialWarp = deformNorm * rLimit * 0.14 *
+                            this._noise(emitterTime * (0.55 + motionSpeed * 0.15) + i + 77);
+                        offX += -rDirY * tangentialWarp;
+                        offY += rDirX * tangentialWarp;
+                    }
+
                     const dist = Math.sqrt(offX * offX + offY * offY);
                     if (dist > rLimit) {
                         const scale = rLimit / dist;
@@ -553,42 +620,46 @@ const AtomFluidEngine = {
                     const ex = anchor.x + offX;
                     const ey = anchor.y + offY;
 
-                    // B: gentle force — reduced ~10× (was 40-100, now 5-15)
-                    const rDirX = Math.cos(angle);
-                    const rDirY = Math.sin(angle);
-                    const noiseX = this._noise(emitterTime * 1.3 + em.noisePhase * 2) * 0.3;
-                    const noiseY = this._noise(emitterTime * 1.1 + em.noisePhase * 3) * 0.3;
-                    const forceMag = 5 + (rLimit / 200) * 10; // gentle, scales slightly with radius
-                    const dx = (rDirX * em.radialBias + noiseX) * forceMag * speedScale;
-                    const dy = (rDirY * em.radialBias + noiseY) * forceMag * speedScale;
+                    // Smooth internal motion vector flowing tangentially along contour
+                    // Approximate tangent by getting radius slightly ahead
+                    const rAhead = getCurveRadius((currentAngle + 0.1) % (Math.PI * 2), emitterTime);
+                    const slope = (rAhead - orbitR) / 0.1;
+                    const tangentAngle = currentAngle + Math.PI / 2 - Math.atan(slope / orbitR);
+                    const tangentX = Math.cos(tangentAngle);
+                    const tangentY = Math.sin(tangentAngle);
 
-                    // Gradient palette colour with per-emitter offset + signal saturation
+                    const flowNoise = this._noise(emitterTime * (0.3 + motionSpeed * 0.2) + i * 1.7);
+                    const forceMag = (3.5 + rLimit * 0.05) * forceGain;
+                    // gentle push outwards + strong push along organic tangent
+                    const dx = (tangentX * 0.7 + rDirX * 0.15 + flowNoise * 0.22) * forceMag;
+                    const dy = (tangentY * 0.7 + rDirY * 0.15 + flowNoise * 0.22) * forceMag;
+
                     const t = Math.random();
-                    // D: constant per-splat intensity (not inversely scaled)
-                    // G: brightness multiplies final RGB
-                    const intensity = p.density * 0.15 * brightnessFactor;
+                    const intensity = p.density * 0.11 * brightnessFactor;
 
                     let color;
                     if (anchor.color) {
-                        // v16 Baseline: Use sampled color but keep depth with slight random variation for volumetric feel
                         const rVar = (Math.random() - 0.5) * 0.05;
                         const gVar = (Math.random() - 0.5) * 0.05;
                         const bVar = (Math.random() - 0.5) * 0.05;
+                        const satNorm = Math.max(0, Math.min(3, p.saturation / 100));
+                        const tint = this._hslToRGB(p.hue, Math.max(0, Math.min(300, p.saturation)), 50);
                         color = [
-                            (anchor.color.r + rVar) * intensity,
-                            (anchor.color.g + gVar) * intensity,
-                            (anchor.color.b + bVar) * intensity
+                            ((anchor.color.r + rVar) * (1 + satNorm * 0.4) + tint[0] * satNorm * 0.8) * intensity,
+                            ((anchor.color.g + gVar) * (1 + satNorm * 0.4) + tint[1] * satNorm * 0.8) * intensity,
+                            ((anchor.color.b + bVar) * (1 + satNorm * 0.4) + tint[2] * satNorm * 0.8) * intensity
                         ];
                     } else {
-                        const rgb = this._lerpGradientRGB(anchor.colorGradient, t, em.colorOffset, p.saturation);
+                        const rgb = this._lerpGradientRGB(anchor.colorGradient, t, (i % 3) * 20 - 20, p.saturation);
                         color = [rgb[0] * intensity, rgb[1] * intensity, rgb[2] * intensity];
                     }
 
-                    this._splat(ex, ey, dx, dy, color, p.size);
+                    const deformRadiusScale = 1 + Math.abs((p.deformAmount || 0) / 2) * 1.2;
+                    this._splat(ex, ey, dx, dy, color, p.size * (0.6 + haloScale * 0.8) * deformRadiusScale);
                     anchor._splatCount++;
                     this._totalSplats++;
                 }
-            });
+            }
         });
     },
 

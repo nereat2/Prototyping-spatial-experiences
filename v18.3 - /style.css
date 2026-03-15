@@ -76,49 +76,117 @@ body {
 }
 
 /* Ã¢â€â‚¬Ã¢â€â‚¬ Sidebar Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */
-#sidebar {
-    width: var(--sidebar-width);
-    min-width: var(--sidebar-width);
-    height: 100vh;
-    background: var(--bg-secondary);
-    border-right: 1px solid var(--border-subtle);
+
+/* Ã¢â€ â‚¬Ã¢â€ â‚¬ Viewport Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬ */
+#viewport {
+    flex: 1;
     display: flex;
     flex-direction: column;
-    overflow-y: auto;
-    overflow-x: hidden;
+    background: var(--bg-primary);
+    position: relative;
+    overflow: hidden;
 }
 
-#sidebar::-webkit-scrollbar {
-    width: 4px;
+/* Ã¢â€ â‚¬Ã¢â€ â‚¬ Control Bar Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬Ã¢â€ â‚¬ */
+#control-bar {
+    position: absolute;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: rgba(10, 10, 12, 0.82);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border-default);
+    border-radius: 4px;
+    padding: 0 16px;
+    height: 52px;
+    white-space: nowrap;
 }
 
-#sidebar::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-#sidebar::-webkit-scrollbar-thumb {
-    background: var(--border-default);
-}
-
-#sidebar-header {
-    padding: var(--space-lg) var(--space-lg) var(--space-md);
-    border-bottom: 1px solid var(--border-subtle);
-}
-
-#sidebar-header h1 {
+#control-bar-title {
     font-family: var(--font-mono);
-    font-size: 13px;
+    font-size: 11px;
     font-weight: 600;
     letter-spacing: 3px;
     color: var(--text-primary);
+    padding-right: 12px;
+    border-right: 1px solid var(--border-subtle);
 }
 
-#sidebar-header .subtitle {
-    display: block;
+#control-bar-title .subtitle {
     font-size: 9px;
+    font-weight: 300;
     letter-spacing: 2px;
     color: var(--text-tertiary);
-    margin-top: 2px;
+    margin-left: 8px;
+}
+
+#control-buttons {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ctrl-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 30px;
+    padding: 0 12px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border-default);
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 1.5px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-transform: uppercase;
+    user-select: none;
+    border-radius: 2px;
+    white-space: nowrap;
+}
+
+.ctrl-btn:hover:not(:disabled) {
+    background: rgba(90, 138, 170, 0.12);
+    border-color: var(--accent-signal);
+    color: var(--text-primary);
+}
+
+.ctrl-btn:active:not(:disabled) {
+    background: rgba(90, 138, 170, 0.2);
+    transform: scale(0.97);
+}
+
+.ctrl-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.ctrl-btn.active {
+    background: rgba(90, 138, 170, 0.18);
+    border-color: var(--accent-signal);
+    color: var(--accent-signal);
+}
+
+.ctrl-btn-upload {
+    cursor: pointer;
+}
+
+.ctrl-btn-capture {
+    border-color: rgba(90, 138, 170, 0.5);
+    color: var(--accent-signal);
+}
+
+.ctrl-btn-capture:hover:not(:disabled) {
+    background: rgba(90, 138, 170, 0.2);
+    border-color: var(--accent-signal);
+    color: #8ec0e0;
 }
 
 /* Ã¢â€â‚¬Ã¢â€â‚¬ Panels Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */
@@ -353,205 +421,11 @@ body {
     color: var(--text-primary);
 }
 
-.layer-order-btns {
-    display: flex;
-    gap: 2px;
-}
-
-.layer-order-btn {
-    background: none;
-    border: 1px solid var(--border-subtle);
-    color: var(--text-tertiary);
-    font-size: 8px;
-    width: 16px;
-    height: 16px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-family: var(--font-mono);
-}
-
-.layer-order-btn:hover {
-    background: var(--bg-hover);
-    color: var(--text-secondary);
-}
-
-.signal-delete {
-    background: none;
-    border: 1px solid transparent;
-    color: var(--text-tertiary);
-    font-size: 10px;
-    cursor: pointer;
-    padding: 0 4px;
-    font-family: var(--font-mono);
-    transition: all 0.12s;
-}
-
-.signal-delete:hover {
-    color: var(--accent-danger);
-    border-color: var(--accent-danger);
-}
 
 /* Ã¢â€â‚¬Ã¢â€â‚¬ Parameter Controls Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */
-.param-group {
-    margin-bottom: var(--space-md);
-}
 
-.param-group-title {
-    font-size: 9px;
-    font-weight: 600;
-    letter-spacing: 1.5px;
-    color: var(--text-tertiary);
-    margin-bottom: var(--space-sm);
-    text-transform: uppercase;
-}
-
-.param-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-    margin-bottom: var(--space-xs);
-}
-
-.param-label {
-    font-size: 9px;
-    color: var(--text-secondary);
-    min-width: 80px;
-    letter-spacing: 0.5px;
-}
-
-.param-slider {
-    flex: 1;
-    -webkit-appearance: none;
-    appearance: none;
-    height: 3px;
-    background: var(--bg-tertiary);
-    border: none;
-    outline: none;
-    cursor: pointer;
-}
-
-.param-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 10px;
-    height: 10px;
-    background: var(--text-secondary);
-    border: none;
-    cursor: pointer;
-    transition: background 0.12s;
-}
-
-.param-slider::-webkit-slider-thumb:hover {
-    background: var(--text-primary);
-}
-
-.param-slider:active::-webkit-slider-thumb {
-    background: var(--accent-signal);
-}
-
-.param-value {
-    font-size: 9px;
-    color: var(--text-tertiary);
-    min-width: 32px;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-}
-
-.param-select {
-    flex: 1;
-    background: var(--bg-input);
-    border: 1px solid var(--border-default);
-    color: var(--text-secondary);
-    font-family: var(--font-mono);
-    font-size: 9px;
-    padding: var(--space-xs) var(--space-sm);
-    outline: none;
-    cursor: pointer;
-}
-
-.param-select:focus {
-    border-color: var(--border-focus);
-}
-
-.param-toggle-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: var(--space-xs);
-}
-
-.param-toggle {
-    width: 28px;
-    height: 14px;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-default);
-    cursor: pointer;
-    position: relative;
-    transition: all 0.15s;
-}
-
-.param-toggle::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 8px;
-    height: 8px;
-    background: var(--text-tertiary);
-    transition: all 0.15s;
-}
-
-.param-toggle.active {
-    background: rgba(90, 138, 170, 0.2);
-    border-color: var(--accent-cold);
-}
-
-.param-toggle.active::after {
-    left: 16px;
-    background: var(--accent-signal);
-}
-
-.param-color-input {
-    width: 20px;
-    height: 20px;
-    border: 1px solid var(--border-default);
-    background: none;
-    padding: 0;
-    cursor: pointer;
-}
-
-.param-text {
-    flex: 1;
-    height: 22px;
-    padding: 2px 6px;
-    background: var(--bg-input);
-    border: 1px solid var(--border-default);
-    color: var(--text-primary);
-    font-family: var(--font-mono);
-    font-size: 9px;
-    letter-spacing: 0.5px;
-    outline: none;
-    transition: border-color 0.15s;
-}
-
-.param-text:focus {
-    border-color: var(--accent-signal);
-}
-
-.param-text::placeholder {
-    color: var(--text-tertiary);
-}
 
 /* Ã¢â€â‚¬Ã¢â€â‚¬ Viewport Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */
-#viewport {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    background: var(--bg-primary);
-    position: relative;
-    overflow: hidden;
-}
 
 #canvas-container {
     flex: 1;
@@ -611,33 +485,6 @@ body {
 }
 
 /* Ã¢â€â‚¬Ã¢â€â‚¬ Capture Button Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */
-.capture-btn {
-    position: absolute;
-    bottom: calc(var(--status-height) + var(--space-md));
-    right: var(--space-lg);
-    padding: var(--space-sm) var(--space-xl);
-    background: rgba(90, 138, 170, 0.15);
-    border: 1px solid var(--accent-signal);
-    color: var(--accent-signal);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 2px;
-    cursor: pointer;
-    transition: all 0.2s;
-    z-index: 20;
-}
-
-.capture-btn:hover {
-    background: rgba(90, 138, 170, 0.25);
-    color: #8ec0e0;
-    border-color: #8ec0e0;
-}
-
-.capture-btn:active {
-    background: rgba(90, 138, 170, 0.35);
-    transform: scale(0.97);
-}
 
 /* Ã¢â€â‚¬Ã¢â€â‚¬ Checkbox Labels Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */
 .checkbox-label {
